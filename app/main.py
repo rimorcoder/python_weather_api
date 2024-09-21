@@ -41,10 +41,11 @@ class WeatherData(BaseModel):
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     client_ip = request.client.host
-    endpoint = request.url.path
-    key = f"rate_limit:{client_ip}:{endpoint}"
+    full_path = request.url.path
+    root_path = '/' + full_path.strip('/').split('/')[0]  # Extract the root path
+    key = f"rate_limit:{client_ip}:{root_path}"
     rate_limit = 5  # Max requests
-    time_window = 60  # Time window in seconds
+    time_window = 30  # Time window in seconds
 
     request_count = redis_client.get(key)
 
@@ -55,8 +56,8 @@ async def rate_limit_middleware(request: Request, call_next):
         if request_count < rate_limit:
             redis_client.incr(key)
         else:
-            logger.warning(f"Rate limit exceeded for client: {client_ip} | {endpoint}")
-            return JSONResponse(status_code=500, content={"detail": "Rate limit exceeded"})
+            logger.warning(f"Rate limit exceeded for client: {client_ip} | {root_path}")
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded"})
     
     response = await call_next(request)
     return response
