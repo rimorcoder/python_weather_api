@@ -2,4 +2,4 @@ fastapi
 uvicorn
 redis
 requests
-slowapi
+fastapi_limiter

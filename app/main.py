@@ -1,35 +1,21 @@
-from fastapi import FastAPI, Request
-from redis import Redis
+from fastapi import FastAPI, Request, Depends
+from fastapi_limiter import FastAPILimiter
+from fastapi_limiter.depends import RateLimiter
+from redis import Redis, ConnectionPool
 from pydantic import BaseModel
 import json
 import logging
 from typing import List
 import requests
 import os
-from slowapi import Limiter
-from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
-from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# rate limits
-async def rate_limit_exceeded(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
-        status_code=429,
-        content={"detail": "Rate limit exceeded"},
-    )
-def get_client_ip(request: Request) -> str:
-    if "x-forwarded-for" in request.headers:
-        return request.headers["x-forwarded-for"].split(",")[0]
-    return request.client.host
-limiter = Limiter(key_func=get_client_ip)
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded)
-app.add_middleware(SlowAPIMiddleware)
+# Initialize Redis connection pool
+redis_pool = ConnectionPool(host='redis', port=6379, db=0)
 
-# Connect to Redis
-redis_client = Redis(host='redis', port=6379, db=0)
+# Initialize Redis client using the connection pool
+redis_client = Redis(connection_pool=redis_pool)
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +38,10 @@ class WeatherData(BaseModel):
     tzoffset: float
     days: List[DayForecast]
 
-@limiter.limit("5/minute") 
+@app.get("/")
+async def read_root():
+    return {"message": "weather api"}
+
 @app.get("/weather/{address}", response_model=WeatherData)
 async def get_weather(address: str, request: Request):
     cached_weather = redis_client.get(f"record:{address}")
@@ -64,13 +53,14 @@ async def get_weather(address: str, request: Request):
         return weather
     else:
         api_url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{address}"   
-        response = requests.get(api_url, params={'key':os.getenv('API_KEY'),
-                                                 'unitGroup':'us',
-                                                 'include':'current',
-                                                 'contentType':'json',
-                                                 'include':'days',
-                                                 'elements':'datetime,tempmax,tempmin,temp'
-                                                 })
+        response = requests.get(api_url, params={
+            'key':os.getenv('API_KEY'),
+            'unitGroup':'us',
+            'include':'current',
+            'contentType':'json',
+            'include':'days',
+            'elements':'datetime,tempmax,tempmin,temp'
+            })
         
 
         response.raise_for_status()  # Raise an exception for HTTP errors
@@ -80,7 +70,6 @@ async def get_weather(address: str, request: Request):
         logger.info("data added to cache")  
         return weather
     
-@limiter.limit("5/minute") 
 @app.delete("/weather/{address}")
 async def delete_weather(address: str, request: Request):
     redis_client.delete(f"record:{address}")
