@@ -1,5 +1,7 @@
-# Weather API
- 
+# Weather API (w/Redis and Docker)
+
+Uses redis to cache requests from a weather api. Runs on docker. 
+
 https://roadmap.sh/projects/weather-api-wrapper-service
 
 ## Start
