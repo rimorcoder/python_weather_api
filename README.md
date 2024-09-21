@@ -23,11 +23,5 @@ Using your preferred HTTP client, run the following to get weather data, changin
 ```
 GET http://localhost:8000/weather/new+york
 ```
-The first time this runs, the data will be added to the cache. During testing this took around 250 ms. 
-On subsequent calls, the takes around 5-7 ms. 
-
-## Delete cached item
-Run the following to remove the data from the cache
-```
-DELETE http://localhost:8000/weather/new+york
-```
+The first time this runs, the app will query the weather api and the response will be added to the cache then returned to the user. During testing this took around 250 ms. 
+On subsequent calls the cache us referenced, which takes around 5-7 ms to respond. 
