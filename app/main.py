@@ -1,12 +1,10 @@
 from fastapi import FastAPI, Request, Depends
-from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.depends import RateLimiter
 from redis import Redis, ConnectionPool
 from pydantic import BaseModel
 import json
 import logging
 from typing import List
-import requests
+import httpx
 import os
 
 app = FastAPI()
@@ -52,16 +50,16 @@ async def get_weather(address: str, request: Request):
         logger.info("data retrieved from cache")  
         return weather
     else:
-        api_url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{address}"   
-        response = requests.get(api_url, params={
-            'key':os.getenv('API_KEY'),
-            'unitGroup':'us',
-            'include':'current',
-            'contentType':'json',
-            'include':'days',
-            'elements':'datetime,tempmax,tempmin,temp'
-            })
-        
+        api_url = f"https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/{address}"
+        response = httpx.get(api_url, params={
+            'key': os.getenv('API_KEY'),
+            'unitGroup': 'us',
+            'include': 'current',
+            'contentType': 'json',
+            'include': 'days',
+            'elements': 'datetime,tempmax,tempmin,temp'
+        })
+                
 
         response.raise_for_status()  # Raise an exception for HTTP errors
         weather_data = response.json()
