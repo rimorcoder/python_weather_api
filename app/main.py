@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from redis import Redis, ConnectionPool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 import json
 import logging
 from typing import List
@@ -37,18 +37,30 @@ class WeatherData(BaseModel):
     tzoffset: float
     days: List[DayForecast]
 
+# Validation
+class AddressModel(BaseModel):
+    address: str = Field(..., min_length=1, max_length=100)
 
+    @classmethod
+    def validate_address(cls, address: str):
+            # Remove spaces and plus signs before checking if the string is alphanumeric
+            cleaned_address = address.replace(' ', '').replace('+', '').replace(',', '')
+            if not cleaned_address.isalnum():
+                raise ValueError("Address must be alphanumeric, with the exception of '+' and ','.")
+            return True
+
+# Rate limit
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    client_ip = request.client.host
-    full_path = request.url.path
-    root_path = '/' + full_path.strip('/').split('/')[0]  # Extract the root path
-    key = f"rate_limit:{client_ip}:{root_path}"
-    rate_limit = 5  # Max requests
-    time_window = 30  # Time window in seconds
+    client_ip: str = request.client.host
+    full_path: str = request.url.path
+    root_path: str = '/' + full_path.strip('/').split('/')[0]  # Extract the root path
+    key: str = f"rate_limit:{client_ip}:{root_path}"
+    rate_limit: int = 5  # Max requests
+    time_window: int = 30  # Time window in seconds
 
     request_count = redis_client.get(key)
-
+    
     if request_count is None:
         redis_client.setex(key, time_window, 1)
     else:
@@ -70,6 +82,12 @@ async def read_root():
 @app.get("/weather/{address}", response_model=WeatherData)
 async def get_weather(address: str, request: Request):
     try:
+        AddressModel.validate_address(address)
+    except ValueError as e:
+        logger.warning(f"{e}")
+        return JSONResponse(status_code=400, content={"detail": f"{e}"})
+
+    try:
         cached_weather = redis_client.get(f"record:{address}")
 
         if cached_weather:
@@ -89,7 +107,6 @@ async def get_weather(address: str, request: Request):
                     'elements': 'datetime,tempmax,tempmin,temp'
                 })
                     
-
             response.raise_for_status()  # Raise an exception for HTTP errors
             weather_data = response.json()
             weather = WeatherData(**weather_data)
@@ -100,8 +117,3 @@ async def get_weather(address: str, request: Request):
         logger.error(e, exc_info=True)
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
     
-@app.delete("/weather/{address}")
-async def delete_weather(address: str, request: Request):
-    redis_client.delete(f"record:{address}")
-    logger.info("data deleted from cache")  
-    return {"message": f"{address} deleted from cache."}
